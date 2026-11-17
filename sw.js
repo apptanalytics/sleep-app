@@ -1,5 +1,5 @@
 // Lull offline cache. Bump VERSION when you change any app file so phones pick up the update.
-const VERSION = "lull-v1";
+const VERSION = "lull-v2";
 const APP = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"];
 
 self.addEventListener("install", e => {

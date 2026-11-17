@@ -392,21 +392,32 @@ function filter(type, f, Q = 0.7) { const b = ctx.createBiquadFilter(); b.type =
 function chain(...n) { n.reduce((a, b) => a.connect(b)); return n[n.length - 1]; }
 function lfo(rate, depth, target) { const o = ctx.createOscillator(), g = gain(depth); o.frequency.value = rate; o.connect(g).connect(target); o.start(); }
 function noise(kind, sec = 8) {
-  const len = ctx.sampleRate * sec, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  const len = ctx.sampleRate * sec, fade = Math.floor(ctx.sampleRate * 0.5);
+  const d = new Float32Array(len + fade); // generate a little extra to blend into the loop point
   let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0,last=0;
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < len + fade; i++) {
     const w = Math.random()*2-1;
     if (kind === "white") d[i] = w;
     else if (kind === "pink") { b0=.99886*b0+w*.0555179; b1=.99332*b1+w*.0750759; b2=.969*b2+w*.153852;
       b3=.8665*b3+w*.3104856; b4=.55*b4+w*.5329522; b5=-.7616*b5-w*.016898; d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*.11; b6=w*.115926; }
     else { last = (last + .02*w) / 1.02; d[i] = last * 3.5; }
   }
+  /* Crossfade the extra tail into the start so the end of the buffer flows into its beginning.
+     Without this, brown noise jumped at the loop point: a click every 8 seconds. */
+  for (let i = 0; i < fade; i++) {
+    const t = i / fade;
+    d[i] = d[i] * Math.sin(t * Math.PI / 2) + d[len + i] * Math.cos(t * Math.PI / 2);
+  }
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  buf.getChannelData(0).set(d.subarray(0, len));
   return buf;
 }
 function loop(buf) { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, Math.random()*buf.duration); return s; }
-function burst(ms, pow = 3) {
+function burst(ms, pow = 3, attackMs = 1.5) {
   const len = Math.floor(ctx.sampleRate*ms/1000), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, pow);
+  const atk = Math.max(1, Math.floor(ctx.sampleRate*attackMs/1000));
+  // a short fade-in: starting at full level is itself a click
+  for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, pow) * Math.min(1, i / atk);
   return buf;
 }
 /* Drops, crackles and thunder are queued a few seconds ahead on the audio clock rather than
@@ -426,43 +437,57 @@ function pump() {
 }
 setInterval(pump, 250);
 
-function buildEngine() {
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
+function buildEngine(context) { // a context can be passed in to render the sound offline for testing
+  // "playback" asks for larger audio buffers: fewer dropouts (heard as crackle) on phones
+  ctx = context || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "playback" });
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3;
-  master = gain(1); chain(master, comp);
+  // the mix used to peak at 130% and clip; leave headroom, limit, then round off anything left
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20;
+  limiter.attack.value = 0.002; limiter.release.value = 0.25;
+  const ceiling = ctx.createWaveShaper();
+  { const n = 2048, c = new Float32Array(n); for (let i = 0; i < n; i++) c[i] = Math.tanh((i / (n - 1)) * 2 - 1) / Math.tanh(1); ceiling.curve = c; }
+  master = gain(1);
+  const out = chain(master, comp, gain(0.6), limiter, ceiling);
   /* Play through an <audio> element where possible. Android treats that as media playback:
      it keeps going with the screen off and gets lock-screen controls. */
   try {
     const dest = ctx.createMediaStreamDestination();
-    comp.connect(dest); player.srcObject = dest.stream; viaElement = true;
-  } catch { comp.connect(ctx.destination); }
+    out.connect(dest); player.srcObject = dest.stream; viaElement = true;
+  } catch { out.connect(ctx.destination); }
   const N = { white: noise("white"), pink: noise("pink"), brown: noise("brown") };
   const bus = {};
   for (const k of ["shore", "pines", "cabin", "stream", "rain", "storm"]) { bus[k] = gain(0); bus[k].connect(master); }
 
   // shore: a swell every ~12 s, brighter at the crest
   { const lp = filter("lowpass", 700), g = gain(.6); chain(loop(N.brown), lp, g, bus.shore);
-    lfo(1/12, .55, g.gain); lfo(1/12, 500, lp.frequency); lfo(1/31, .15, g.gain); }
+    // depths add up to less than the base level, so the trough is quiet but never silent or inverted
+    lfo(1/12, .42, g.gain); lfo(1/12, 500, lp.frequency); lfo(1/31, .1, g.gain); }
   // pines: wind through needles
   { const bp = filter("bandpass", 650, .9), g = gain(.7); chain(loop(N.white), bp, g, bus.pines);
     lfo(.05, 300, bp.frequency); lfo(.071, 200, bp.frequency); lfo(.09, .35, g.gain); }
   // cabin: stove roar and crackle, a little room tone
   { const g = gain(.8); chain(loop(N.brown), filter("lowpass", 320), g, bus.cabin); lfo(.3, .15, g.gain);
-    const crack = burst(4);
-    every(60, 600, bus.cabin, when => { for (let i = 0, n = 1 + Math.floor(Math.random()*3); i < n; i++) {
+    // crackle: soft, rounded pops through a few shared filters, not sharp clicks
+    const crack = burst(7, 3, 1);
+    const pops = [900, 1400, 2100].map(f => { const bp = filter("bandpass", f, .8); chain(bp, filter("lowpass", 3000), bus.cabin); return bp; });
+    every(150, 900, bus.cabin, when => { for (let i = 0, n = 1 + Math.floor(Math.random()*2); i < n; i++) {
       const s = ctx.createBufferSource(); s.buffer = crack;
-      chain(s, filter("highpass", 1200 + Math.random()*2000), gain(.15 + Math.random()*.45), bus.cabin);
-      s.start(when + i * (.01 + Math.random()*.03)); } }); }
+      chain(s, gain(.05 + Math.random()*.12), pops[Math.floor(Math.random()*pops.length)]);
+      s.start(when + i * (.02 + Math.random()*.04)); } }); }
   // stream: running water, a burbling band that never sits still
   { chain(loop(N.pink), filter("bandpass", 900, .6), gain(.9), bus.stream);
     const bp = filter("bandpass", 2400, 4); chain(loop(N.white), bp, gain(.35), bus.stream);
     every(60, 140, bus.stream, when => bp.frequency.setTargetAtTime(1400 + Math.random()*2600, when, .03)); }
   // rain: steady hiss plus drops
   { chain(loop(N.pink), filter("highpass", 600), filter("lowpass", 7000), gain(.8), bus.rain);
-    const drop = burst(18);
-    every(12, 70, bus.rain, when => { const s = ctx.createBufferSource(); s.buffer = drop; const p = ctx.createStereoPanner();
-      p.pan.value = Math.random()*1.6 - .8;
-      chain(s, filter("bandpass", 1800 + Math.random()*4200, 2.5), gain(.05 + Math.random()*.2), p, bus.rain); s.start(when); }); }
+    // drops share a handful of filters and pans, so each drop is only two small nodes
+    const drop = burst(22, 3, 2);
+    const lanes = [[-.7, 1300], [-.35, 2100], [0, 1700], [.35, 2600], [.7, 1500], [.15, 3200]].map(([pan, f]) => {
+      const bp = filter("bandpass", f, 2), p = ctx.createStereoPanner(); p.pan.value = pan;
+      chain(bp, filter("lowpass", 4500), p, bus.rain); return bp; });
+    every(15, 80, bus.rain, when => { const s = ctx.createBufferSource(); s.buffer = drop;
+      chain(s, gain(.03 + Math.random()*.1), lanes[Math.floor(Math.random()*lanes.length)]); s.start(when); }); }
   // storm: gusts and distant thunder
   { const bp = filter("bandpass", 380, .7), g = gain(.6); chain(loop(N.white), bp, g, bus.storm);
     lfo(.13, 200, bp.frequency); lfo(.11, .4, g.gain);
