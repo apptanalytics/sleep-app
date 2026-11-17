@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#102A2C">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Lull — where are you sleeping tonight?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;1,400&family=Alegreya+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    Lull, direction B: a night map.
+    You choose a place, not a set of volumes. The map is the mixer.
+  */
+  :root {
+    --sea:        #102A2C;  /* water at night */
+    --land:       #1D3A2B;  /* pine and moss */
+    --contour:    #46695A;
+    --lichen:     #D9E4C6;  /* text, like moonlight on paper */
+    --lichen-dim: #93A894;
+    --lantern:    #F2C14E;  /* you, the only warm thing on the map */
+
+    --serif: "Alegreya", Georgia, serif;
+    --sans:  "Alegreya Sans", system-ui, sans-serif;
+
+    /* scale: 14 / 17 / 21 / 32 / 64 */
+    --t-sm: 0.875rem;
+    --t-md: 1.0625rem;
+    --t-lg: 1.3125rem;
+    --t-xl: 2rem;
+    --t-xxl: 4rem;
+
+    --gutter: clamp(1rem, 4vw, 2.5rem);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--sea);
+    color: var(--lichen);
+    font: 400 var(--t-md)/1.5 var(--sans);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;            /* no pull-to-refresh reload in the middle of the night */
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--lantern); outline-offset: 3px; border-radius: 2px; }
+
+  /* ---------- header ---------- */
+  .top { padding: var(--gutter) var(--gutter) 0; }
+  .top h1 {
+    margin: 0;
+    font: italic 400 var(--t-xl)/1.15 var(--serif);
+  }
+  .caption {
+    margin: 0.35rem 0 0; color: var(--lichen-dim); min-height: 1.5em;
+  }
+
+  /* ---------- map ---------- */
+  .map-wrap { position: relative; min-height: 0; }
+  #map {
+    width: 100%; height: 100%; display: block;
+    touch-action: none; cursor: crosshair;
+    user-select: none; -webkit-user-select: none;
+  }
+  .coast     { fill: var(--land); stroke: var(--lichen-dim); stroke-width: 1.2; }
+  .contour   { fill: none; stroke: var(--contour); stroke-width: 0.9; }
+  .depth     { fill: none; stroke: var(--contour); stroke-width: 0.8; stroke-dasharray: 2 5; opacity: .6; }
+  .stream    { fill: none; stroke: #7FA6A0; stroke-width: 1.6; stroke-linecap: round; }
+  .tree      { fill: none; stroke: var(--lichen-dim); stroke-width: 1; }
+  .cabin     { fill: var(--sea); stroke: var(--lichen); stroke-width: 1.2; }
+  .place {
+    font: italic 400 19px var(--serif); fill: var(--lichen);
+    letter-spacing: 0.06em;
+    paint-order: stroke; stroke: var(--land); stroke-width: 6px; stroke-linejoin: round; /* knock out trees behind */
+    transition: opacity .4s;
+  }
+  .place.water { fill: #A9C7C1; letter-spacing: 0.22em; stroke: var(--sea); }
+
+  #lantern { cursor: grab; outline: none; }
+  #lantern:active { cursor: grabbing; }
+  #lantern .core { fill: var(--lantern); }
+  #lantern .ring { fill: none; stroke: var(--lantern); stroke-width: 1.5; opacity: 0; }
+  #lantern:focus-visible .ring { opacity: 1; }
+
+  /* ---------- controls ---------- */
+  .bottom {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 1rem 2rem;
+    padding: 1rem var(--gutter) calc(var(--gutter) + env(safe-area-inset-bottom));
+  }
+  .group { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .group-label { color: var(--lichen-dim); font-size: var(--t-sm); }
+
+  .weather { display: flex; border: 1px solid var(--contour); border-radius: 999px; padding: 3px; margin: 0; }
+  .weather legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .weather input { position: absolute; opacity: 0; pointer-events: none; }
+  .weather label {
+    padding: 0.45rem 1rem; border-radius: 999px; cursor: pointer; color: var(--lichen-dim);
+  }
+  .weather input:checked + label { background: var(--land); color: var(--lichen); box-shadow: inset 0 0 0 1px var(--contour); }
+  .weather input:focus-visible + label { outline: 2px solid var(--lantern); outline-offset: 2px; }
+
+  select {
+    background: var(--sea); border: 1px solid var(--contour); border-radius: 6px;
+    padding: 0.55rem 0.75rem;
+  }
+  .play {
+    min-width: 8rem; padding: 0.8rem 1.75rem; border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--lantern); color: var(--sea); font-weight: 700;
+  }
+  .play[aria-pressed=true] { background: transparent; color: var(--lantern); box-shadow: inset 0 0 0 2px var(--lantern); }
+  .dim { background: none; border: 0; padding: 0.8rem 0.25rem; cursor: pointer; color: var(--lichen-dim); }
+  .dim:hover { color: var(--lichen); }
+  .dim:disabled { opacity: .4; cursor: default; }
+
+  /* ---------- lights out: everything goes, except your lantern ---------- */
+  .lights-out {
+    position: fixed; inset: 0; z-index: 10; background: #000;
+    display: grid; place-content: center; justify-items: center; text-align: center; gap: 1.25rem;
+    color: #4E5A3A; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity 2.5s ease;
+  }
+  .lights-out.is-on { opacity: 1; pointer-events: auto; }
+  .lights-out .ember { width: 10px; height: 10px; border-radius: 50%; background: #6B5420; }
+  .lights-out p { margin: 0; }
+  .lights-out .clock { font: italic 400 var(--t-xxl)/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .lights-out .hint { font-size: var(--t-sm); }
+
+  /* ---------- fine-tune drawer ---------- */
+  .tune-toggle {
+    background: none; border: 0; padding: 0.6rem 0.25rem; cursor: pointer; color: var(--lichen-dim);
+    text-decoration: underline; text-decoration-color: var(--contour); text-underline-offset: 0.3em;
+  }
+  .tune-toggle:hover, .tune-toggle[aria-expanded=true] { color: var(--lichen); text-decoration-color: var(--lantern); }
+  .tune {
+    flex-basis: 100%;
+    border-top: 1px solid var(--contour);
+    padding-top: 1rem;
+  }
+  .tune:not([hidden]) { animation: rise .35s cubic-bezier(.3,.7,.2,1); }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  .tune-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: 0.5rem; }
+  .tune-head p { margin: 0; color: var(--lichen-dim); font-size: var(--t-sm); max-width: 36em; }
+  .tune-reset { background: none; border: 0; padding: 0.4rem 0; cursor: pointer; color: var(--lichen-dim); font-size: var(--t-sm); white-space: nowrap; }
+  .tune-reset:hover { color: var(--lichen); }
+  .tune-reset:disabled { opacity: .4; cursor: default; }
+  .tune-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 0 3rem; }
+  .tune-row { display: grid; grid-template-columns: 5.5rem 1fr 7rem; align-items: center; gap: 0.75rem; }
+  .tune-row label { font: italic 400 var(--t-lg)/1.2 var(--serif); }
+  .tune-row output { font-size: var(--t-sm); color: var(--lichen-dim); text-align: right; font-variant-numeric: tabular-nums; }
+  .tune-row output.changed { color: var(--lantern); }
+  .tune input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 40px; margin: 0; background: transparent; cursor: pointer;
+  }
+  /* the track marks "as on the map" in the middle */
+  .tune input[type=range]::-webkit-slider-runnable-track {
+    height: 9px; background: linear-gradient(var(--contour), var(--contour)) center / 100% 1px no-repeat,
+                            linear-gradient(var(--lichen-dim), var(--lichen-dim)) center / 1px 100% no-repeat;
+  }
+  .tune input[type=range]::-moz-range-track {
+    height: 9px; background: linear-gradient(var(--contour), var(--contour)) center / 100% 1px no-repeat,
+                            linear-gradient(var(--lichen-dim), var(--lichen-dim)) center / 1px 100% no-repeat;
+  }
+  .tune input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; margin-top: -4.5px; border-radius: 50%;
+    background: var(--lantern); border: 2px solid var(--sea);
+  }
+  .tune input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--lantern); border: 2px solid var(--sea); }
+
+  @media (max-width: 640px) {
+    .tune-row { grid-template-columns: 5rem 1fr 6.5rem; }
+    html, body { height: auto; }
+    body { grid-template-rows: auto minmax(min(92vw, 60dvh), 1fr) auto; } /* keep the map usable; scroll for the drawer */
+    .bottom { flex-direction: column; align-items: stretch; }
+    .group { justify-content: space-between; }
+    .play { flex: 1; }
+    .place { font-size: 28px; } /* the map scales down on phones; keep names legible */
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .place, .lights-out { transition: none; }
+    .tune:not([hidden]) { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Where are you sleeping tonight?</h1>
+  <p class="caption" id="caption" aria-live="polite"></p>
+</header>
+
+<div class="map-wrap">
+  <svg id="map" viewBox="90 110 620 620" preserveAspectRatio="xMidYMid meet" aria-label="Map of the island. Move the lantern to change what you hear.">
+    <defs>
+      <radialGradient id="halo">
+        <stop offset="0" stop-color="#F2C14E" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#F2C14E" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <g id="depths"></g>
+    <g id="land"></g>
+    <clipPath id="island"><path id="coast-clip"/></clipPath>
+    <g id="features" clip-path="url(#island)"></g>
+    <g id="labels"></g>
+    <g id="lantern" tabindex="0" role="slider" aria-label="Your spot on the island. Use arrow keys to move."
+       aria-valuetext="">
+      <circle r="70" fill="url(#halo)"/>
+      <circle class="ring" r="14"/>
+      <circle class="core" r="6"/>
+    </g>
+  </svg>
+</div>
+
+<footer class="bottom">
+  <section class="tune" id="tune" hidden aria-labelledby="tune-title">
+    <div class="tune-head">
+      <p id="tune-title">The map sets the mix. Turn a sound up or down from there, wherever you stand.</p>
+      <button class="tune-reset" id="tune-reset">Match the map</button>
+    </div>
+    <div class="tune-rows" id="tune-rows"></div>
+  </section>
+  <div class="group">
+    <fieldset class="weather">
+      <legend>Weather</legend>
+      <input type="radio" name="weather" id="w-clear" value="clear" checked><label for="w-clear">Clear</label>
+      <input type="radio" name="weather" id="w-rain"  value="rain"><label for="w-rain">Rain</label>
+      <input type="radio" name="weather" id="w-storm" value="storm"><label for="w-storm">Storm</label>
+    </fieldset>
+    <button class="tune-toggle" id="tune-toggle" aria-expanded="false" aria-controls="tune">Fine-tune sounds</button>
+  </div>
+  <div class="group">
+    <label class="group" style="gap:.5rem"><span class="group-label">Fade out over</span>
+      <select id="fade">
+        <option value="15">15 min</option>
+        <option value="30" selected>30 min</option>
+        <option value="60">1 hour</option>
+        <option value="90">90 min</option>
+        <option value="0">Never, play all night</option>
+      </select>
+    </label>
+    <button class="play" id="play" aria-pressed="false">Play</button>
+    <button class="dim" id="dim" disabled>Dim the screen</button>
+  </div>
+</footer>
+
+<audio id="player" playsinline></audio>
+
+<div class="lights-out" id="lights-out" role="dialog" aria-modal="true" aria-label="Screen dimmed" tabindex="-1">
+  <span class="ember" aria-hidden="true"></span>
+  <p class="clock" id="clock"></p>
+  <p class="hint">Tap anywhere to bring back the map</p>
+</div>
+
+<script>
+/* ============================================================
+   The island (deterministic, so it is the same every night)
+   ============================================================ */
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = id => document.getElementById(id);
+const C = { x: 400, y: 410 };   // island centre
+const HILL = { x: 440, y: 340 };
+
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+function blobPoints(cx, cy, r, seed, amp = 0.16) {
+  const R = rng(seed), ph = [R()*6.28, R()*6.28, R()*6.28, R()*6.28];
+  const pts = [];
+  for (let i = 0; i < 72; i++) {
+    const t = i / 72 * Math.PI * 2;
+    const k = 1 + amp * (Math.sin(2*t+ph[0])*.5 + Math.sin(3*t+ph[1])*.3 + Math.sin(5*t+ph[2])*.15 + Math.sin(9*t+ph[3])*.05);
+    pts.push([cx + Math.cos(t) * r * k, cy + Math.sin(t) * r * k * 0.92]);
+  }
+  return pts;
+}
+function smoothPath(pts, closed = true) { // Catmull-Rom to cubic Bézier
+  const n = pts.length, P = i => pts[closed ? (i + n) % n : Math.max(0, Math.min(n - 1, i))];
+  let d = `M${P(0)[0].toFixed(1)},${P(0)[1].toFixed(1)}`;
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const p0 = P(i-1), p1 = P(i), p2 = P(i+1), p3 = P(i+2);
+    d += `C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)},${(p1[1]+(p2[1]-p0[1])/6).toFixed(1)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)},${(p2[1]-(p3[1]-p1[1])/6).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return closed ? d + "Z" : d;
+}
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent && parent.append(e); return e;
+}
+
+const coastPts = blobPoints(C.x, C.y, 235, 7);
+// sea depth lines: the coast, pushed outward
+for (const [s, seed] of [[1.14, 7], [1.32, 8], [1.55, 9]])
+  el("path", { class: "depth", d: smoothPath(blobPoints(C.x, C.y, 235 * s, seed, 0.16 / s)) }, $("depths"));
+el("path", { class: "coast", d: smoothPath(coastPts) }, $("land"));
+$("coast-clip").setAttribute("d", smoothPath(coastPts));
+// contours climb toward the hill
+[0.78, 0.58, 0.4, 0.25, 0.13].forEach((s, i) => {
+  const t = 1 - s;
+  el("path", { class: "contour", d: smoothPath(blobPoints(C.x + (HILL.x - C.x) * t, C.y + (HILL.y - C.y) * t, 235 * s, 11 + i, 0.2)) }, $("land"));
+});
+
+/* places: where each sound lives */
+const PLACES = {
+  pines:  { x: 520, y: 300, label: "The pines",   near: "In the pines",       far: "wind in the pines" },
+  cabin:  { x: 285, y: 455, label: "Cabin",       near: "By the cabin stove", far: "the stove" },
+  stream: { x: 505, y: 505, label: "Stream",      near: "Beside the stream",  far: "the stream" },
+  shore:  {                 label: "The shore",   near: "On the shore",       far: "the surf" },
+};
+
+// pines: a scatter of small tree marks
+{ const R = rng(3), g = $("features");
+  for (let i = 0; i < 46; i++) {
+    const a = R() * 6.28, d = Math.sqrt(R()) * 95;
+    const x = PLACES.pines.x + Math.cos(a) * d * 1.2, y = PLACES.pines.y + Math.sin(a) * d * 0.8;
+    el("path", { class: "tree", d: `M${x-4},${y+4}L${x},${y-5}L${x+4},${y+4}` }, g);
+  } }
+// stream: from the hill down to the south-east coast
+const streamPts = [[452, 352], [470, 400], [462, 440], [500, 480], [520, 530], [560, 560], [585, 600]];
+el("path", { class: "stream", d: smoothPath(streamPts, false) }, $("features"));
+// cabin
+el("rect", { class: "cabin", x: PLACES.cabin.x - 9, y: PLACES.cabin.y - 7, width: 18, height: 14 }, $("features"));
+el("path", { class: "cabin", d: `M${PLACES.cabin.x-12},${PLACES.cabin.y-7}L${PLACES.cabin.x},${PLACES.cabin.y-17}L${PLACES.cabin.x+12},${PLACES.cabin.y-7}Z` }, $("features"));
+
+const labels = {
+  pines:  el("text", { class: "place", x: 548, y: 352 }, $("labels")),
+  cabin:  el("text", { class: "place", x: 248, y: 492 }, $("labels")),
+  stream: el("text", { class: "place", x: 540, y: 500 }, $("labels")),
+  shore:  el("text", { class: "place water", x: 130, y: 690 }, $("labels")),
+};
+for (const k in labels) labels[k].textContent = PLACES[k].label;
+
+/* ============================================================
+   How loud each place is, from where the lantern stands
+   ============================================================ */
+// storage can be unavailable (private browsing, file previews); the app works without it
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const pos = Object.assign({ x: 330, y: 560 }, store.get("lull.spot"));
+const near = (p, sigma) => Math.exp(-(((pos.x - p.x) ** 2 + (pos.y - p.y) ** 2) / (sigma * sigma)));
+
+function distToStream() {
+  let best = 1e9;
+  for (let i = 0; i < streamPts.length - 1; i++) {
+    const [ax, ay] = streamPts[i], [bx, by] = streamPts[i + 1];
+    const t = Math.max(0, Math.min(1, ((pos.x-ax)*(bx-ax) + (pos.y-ay)*(by-ay)) / ((bx-ax)**2 + (by-ay)**2)));
+    best = Math.min(best, Math.hypot(pos.x - (ax + t*(bx-ax)), pos.y - (ay + t*(by-ay))));
+  }
+  return best;
+}
+function coastRadiusAt(angle) { // radius of the coastline in the lantern's direction
+  const i = Math.round(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * 72) % 72;
+  return Math.hypot(coastPts[i][0] - C.x, coastPts[i][1] - C.y);
+}
+function mix() {
+  const r = Math.hypot(pos.x - C.x, pos.y - C.y);
+  const edge = coastRadiusAt(Math.atan2(pos.y - C.y, pos.x - C.x));
+  return {
+    shore:  Math.max(0, Math.min(1, (r - edge * 0.55) / (edge * 0.5))),
+    pines:  near(PLACES.pines, 150),
+    cabin:  near(PLACES.cabin, 120),
+    stream: Math.exp(-((distToStream() / 70) ** 2)),
+  };
+}
+
+function describe(m) {
+  const order = Object.keys(m).sort((a, b) => m[b] - m[a]);
+  const [first, second] = order;
+  if (m[first] < 0.2) return "In an open meadow, nothing close by";
+  let s = PLACES[first].near;
+  if (m[second] > 0.25) s += `, with ${PLACES[second].far} nearby`;
+  return s;
+}
+
+/* ============================================================
+   Audio engine (everything is synthesised; nothing loops audibly)
+   ============================================================ */
+let ctx, master, engine = null, viaElement = false;
+const player = document.getElementById("player");
+function gain(v) { const g = ctx.createGain(); g.gain.value = v; return g; }
+function filter(type, f, Q = 0.7) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = Q; return b; }
+function chain(...n) { n.reduce((a, b) => a.connect(b)); return n[n.length - 1]; }
+function lfo(rate, depth, target) { const o = ctx.createOscillator(), g = gain(depth); o.frequency.value = rate; o.connect(g).connect(target); o.start(); }
+function noise(kind, sec = 8) {
+  const len = ctx.sampleRate * sec, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0,last=0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random()*2-1;
+    if (kind === "white") d[i] = w;
+    else if (kind === "pink") { b0=.99886*b0+w*.0555179; b1=.99332*b1+w*.0750759; b2=.969*b2+w*.153852;
+      b3=.8665*b3+w*.3104856; b4=.55*b4+w*.5329522; b5=-.7616*b5-w*.016898; d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*.11; b6=w*.115926; }
+    else { last = (last + .02*w) / 1.02; d[i] = last * 3.5; }
+  }
+  return buf;
+}
+function loop(buf) { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, Math.random()*buf.duration); return s; }
+function burst(ms, pow = 3) {
+  const len = Math.floor(ctx.sampleRate*ms/1000), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, pow);
+  return buf;
+}
+/* Drops, crackles and thunder are queued a few seconds ahead on the audio clock rather than
+   fired by timers: with the screen off, Android runs page timers only about once a second. */
+const AHEAD = 3, schedulers = [];
+function every(minMs, maxMs, bus, fn) { schedulers.push({ minMs, maxMs, bus, fn, next: 0 }); }
+function pump() {
+  if (!ctx || ctx.state !== "running") return;
+  const now = ctx.currentTime;
+  for (const s of schedulers) {
+    if (s.next < now) s.next = now;
+    while (s.next < now + AHEAD) {
+      if (s.bus.gain.value > 0.001) s.fn(s.next); // skip work for sounds you can't hear
+      s.next += (s.minMs + Math.random() * (s.maxMs - s.minMs)) / 1000;
+    }
+  }
+}
+setInterval(pump, 250);
+
+function buildEngine() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3;
+  master = gain(1); chain(master, comp);
+  /* Play through an <audio> element where possible. Android treats that as media playback:
+     it keeps going with the screen off and gets lock-screen controls. */
+  try {
+    const dest = ctx.createMediaStreamDestination();
+    comp.connect(dest); player.srcObject = dest.stream; viaElement = true;
+  } catch { comp.connect(ctx.destination); }
+  const N = { white: noise("white"), pink: noise("pink"), brown: noise("brown") };
+  const bus = {};
+  for (const k of ["shore", "pines", "cabin", "stream", "rain", "storm"]) { bus[k] = gain(0); bus[k].connect(master); }
+
+  // shore: a swell every ~12 s, brighter at the crest
+  { const lp = filter("lowpass", 700), g = gain(.6); chain(loop(N.brown), lp, g, bus.shore);
+    lfo(1/12, .55, g.gain); lfo(1/12, 500, lp.frequency); lfo(1/31, .15, g.gain); }
+  // pines: wind through needles
+  { const bp = filter("bandpass", 650, .9), g = gain(.7); chain(loop(N.white), bp, g, bus.pines);
+    lfo(.05, 300, bp.frequency); lfo(.071, 200, bp.frequency); lfo(.09, .35, g.gain); }
+  // cabin: stove roar and crackle, a little room tone
+  { const g = gain(.8); chain(loop(N.brown), filter("lowpass", 320), g, bus.cabin); lfo(.3, .15, g.gain);
+    const crack = burst(4);
+    every(60, 600, bus.cabin, when => { for (let i = 0, n = 1 + Math.floor(Math.random()*3); i < n; i++) {
+      const s = ctx.createBufferSource(); s.buffer = crack;
+      chain(s, filter("highpass", 1200 + Math.random()*2000), gain(.15 + Math.random()*.45), bus.cabin);
+      s.start(when + i * (.01 + Math.random()*.03)); } }); }
+  // stream: running water, a burbling band that never sits still
+  { chain(loop(N.pink), filter("bandpass", 900, .6), gain(.9), bus.stream);
+    const bp = filter("bandpass", 2400, 4); chain(loop(N.white), bp, gain(.35), bus.stream);
+    every(60, 140, bus.stream, when => bp.frequency.setTargetAtTime(1400 + Math.random()*2600, when, .03)); }
+  // rain: steady hiss plus drops
+  { chain(loop(N.pink), filter("highpass", 600), filter("lowpass", 7000), gain(.8), bus.rain);
+    const drop = burst(18);
+    every(12, 70, bus.rain, when => { const s = ctx.createBufferSource(); s.buffer = drop; const p = ctx.createStereoPanner();
+      p.pan.value = Math.random()*1.6 - .8;
+      chain(s, filter("bandpass", 1800 + Math.random()*4200, 2.5), gain(.05 + Math.random()*.2), p, bus.rain); s.start(when); }); }
+  // storm: gusts and distant thunder
+  { const bp = filter("bandpass", 380, .7), g = gain(.6); chain(loop(N.white), bp, g, bus.storm);
+    lfo(.13, 200, bp.frequency); lfo(.11, .4, g.gain);
+    const roll = burst(5000, 2);
+    every(18000, 50000, bus.storm, when => { const s = ctx.createBufferSource(); s.buffer = roll; s.playbackRate.value = .35;
+      const env = gain(0); env.gain.setTargetAtTime(1.4, when, .4);
+      chain(s, filter("lowpass", 140), env, bus.storm); s.start(when); }); }
+  engine = bus;
+}
+
+const WEATHER = { clear: { rain: 0, storm: 0 }, rain: { rain: .7, storm: 0 }, storm: { rain: 1, storm: .9 } };
+let weather = store.get("lull.weather") || "clear";
+document.getElementById("w-" + weather).checked = true;
+
+/* fine-tune: -100 turns a sound off, 0 leaves it as the map has it, +100 plays it fully wherever you are */
+const TUNABLE = [["shore", "Surf"], ["pines", "Wind"], ["cabin", "Stove"], ["stream", "Stream"], ["weather", "Weather"]];
+const trims = Object.assign({ shore: 0, pines: 0, cabin: 0, stream: 0, weather: 0 }, store.get("lull.trims"));
+const adjust = (v, t) => t >= 0 ? v + (t / 100) * (1 - v) : v * (1 + t / 100);
+
+function applyMix() {
+  const m = mix(), e = {};
+  for (const k in m) e[k] = adjust(m[k], trims[k]);
+  for (const k in labels) labels[k].style.opacity = 0.4 + 0.6 * e[k];
+  $("caption").textContent = describe(m) + (weather === "clear" ? "." : weather === "rain" ? ", in the rain." : ", in a storm.");
+  $("lantern").setAttribute("aria-valuetext", $("caption").textContent);
+  if (!engine) return;
+  const t = ctx.currentTime;
+  for (const k in e) engine[k].gain.setTargetAtTime(e[k] * e[k] * 0.9, t, .25);
+  // indoors by the stove, the weather is muffled
+  const shelter = 1 - 0.6 * m.cabin;
+  for (const k of ["rain", "storm"]) {
+    const base = WEATHER[weather][k];  // in clear weather there is nothing to turn up
+    engine[k].gain.setTargetAtTime(base && adjust(base * shelter, trims.weather) * 0.6, t, .6);
+  }
+}
+
+/* ============================================================
+   Moving the lantern
+   ============================================================ */
+const svg = $("map"), lantern = $("lantern");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function place(x, y) {
+  pos.x = Math.max(110, Math.min(690, x)); pos.y = Math.max(130, Math.min(710, y));
+  lantern.setAttribute("transform", `translate(${pos.x.toFixed(1)} ${pos.y.toFixed(1)})`);
+  applyMix();
+  store.set("lull.spot", { x: Math.round(pos.x), y: Math.round(pos.y) });
+}
+function toMap(e) { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); }
+
+let dragging = false, glide = 0;
+svg.addEventListener("pointerdown", e => {
+  const p = toMap(e);
+  if (e.target.closest("#lantern")) { dragging = true; svg.setPointerCapture(e.pointerId); return; }
+  // tap elsewhere: walk there
+  cancelAnimationFrame(glide);
+  if (reduceMotion) return place(p.x, p.y);
+  const from = { ...pos }, start = performance.now(), dur = 700;
+  (function step(now) {
+    const t = Math.min(1, (now - start) / dur), k = 1 - Math.pow(1 - t, 3);
+    place(from.x + (p.x - from.x) * k, from.y + (p.y - from.y) * k);
+    if (t < 1) glide = requestAnimationFrame(step);
+  })(start);
+});
+svg.addEventListener("pointermove", e => { if (dragging) { const p = toMap(e); place(p.x, p.y); } });
+svg.addEventListener("pointerup", () => dragging = false);
+svg.addEventListener("pointercancel", () => dragging = false);
+lantern.addEventListener("keydown", e => {
+  const step = e.shiftKey ? 60 : 20, d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+  if (d) { e.preventDefault(); place(pos.x + d[0], pos.y + d[1]); }
+});
+
+document.querySelectorAll("input[name=weather]").forEach(r => r.addEventListener("change", () => { weather = r.value; store.set("lull.weather", weather); applyMix(); }));
+
+/* ============================================================
+   Fine-tune drawer
+   ============================================================ */
+const tune = $("tune"), tuneToggle = $("tune-toggle"), tuneReset = $("tune-reset");
+function trimText(v) { return v === 0 ? "As on the map" : v === 100 ? "Always full" : v === -100 ? "Off" : v > 0 ? `Up ${v}%` : `Down ${-v}%`; }
+const tuneInputs = {};
+for (const [k, name] of TUNABLE) {
+  const row = document.createElement("div"); row.className = "tune-row";
+  row.innerHTML = `<label for="t-${k}">${name}</label>
+    <input type="range" id="t-${k}" min="-100" max="100" step="5">
+    <output for="t-${k}"></output>`;
+  const input = row.querySelector("input"), out = row.querySelector("output");
+  const show = () => { const v = +input.value; out.textContent = trimText(v); out.classList.toggle("changed", v !== 0);
+    input.setAttribute("aria-valuetext", `${name}: ${trimText(v)}`); };
+  input.value = trims[k]; show();
+  input.addEventListener("input", () => {
+    trims[k] = Math.abs(+input.value) <= 5 ? 0 : +input.value; // a little detent at "as on the map"
+    input.value = trims[k]; show(); saveTrims(); applyMix();
+  });
+  tuneInputs[k] = { input, show };
+  $("tune-rows").append(row);
+}
+function saveTrims() {
+  store.set("lull.trims", trims);
+  const any = Object.values(trims).some(v => v !== 0);
+  tuneReset.disabled = !any;
+  tuneToggle.textContent = any ? "Fine-tune sounds (changed)" : "Fine-tune sounds";
+}
+tuneReset.addEventListener("click", () => {
+  for (const k in trims) { trims[k] = 0; tuneInputs[k].input.value = 0; tuneInputs[k].show(); }
+  saveTrims(); applyMix();
+});
+tuneToggle.addEventListener("click", () => {
+  const open = tune.hidden;
+  tune.hidden = !open; tuneToggle.setAttribute("aria-expanded", String(open));
+});
+saveTrims();
+
+/* ============================================================
+   Play, fade-out timer, dim
+   ============================================================ */
+const playBtn = $("play"), dimBtn = $("dim"), fadeSel = $("fade"), lightsOut = $("lights-out");
+let playing = false, fadeEnd = 0;
+
+function scheduleFade() {
+  const now = ctx.currentTime, mins = +fadeSel.value;
+  master.gain.cancelScheduledValues(now); master.gain.setValueAtTime(1, now);
+  fadeEnd = mins ? now + mins * 60 : 0;
+  if (fadeEnd) master.gain.exponentialRampToValueAtTime(0.001, fadeEnd);
+}
+function remaining() {
+  if (!fadeEnd) return "";
+  const m = Math.ceil(Math.max(0, fadeEnd - ctx.currentTime) / 60);
+  return m <= 1 ? "Fading out" : `${m} min`;
+}
+function setPlaying(on) {
+  playing = on;
+  playBtn.textContent = on ? "Pause" : "Play";
+  playBtn.setAttribute("aria-pressed", String(on));
+  dimBtn.disabled = !on;
+  $("clock").textContent = remaining();
+  updateSession();
+}
+async function setPlayback(on) {
+  if (!ctx) { buildEngine(); scheduleFade(); applyMix(); }
+  if (on === playing) return;
+  if (on) {
+    if (fadeEnd && ctx.currentTime >= fadeEnd) scheduleFade(); // finished last time: start fresh
+    const resumed = ctx.resume();  // start both inside the tap; Android requires a gesture
+    if (viaElement) await player.play().catch(() => {});
+    await resumed; pump();
+  } else {
+    if (viaElement) player.pause();
+    await ctx.suspend();
+  }
+  setPlaying(on);
+}
+playBtn.addEventListener("click", () => setPlayback(!playing));
+// if Android pauses us (a call, headphones unplugged, another app), follow along
+player.addEventListener("pause", () => { if (playing) setPlayback(false); });
+
+/* lock-screen and notification controls */
+const session = "mediaSession" in navigator ? navigator.mediaSession : null;
+if (session) {
+  session.setActionHandler("play", () => setPlayback(true));
+  session.setActionHandler("pause", () => setPlayback(false));
+  try { session.setActionHandler("stop", () => setPlayback(false)); } catch {}
+}
+let sessionTitle = "";
+function updateSession() {
+  if (!session || !ctx) return;
+  const title = $("caption").textContent.replace(/\.$/, "");
+  if (title !== sessionTitle && "MediaMetadata" in window) {
+    sessionTitle = title;
+    session.metadata = new MediaMetadata({ title, artist: "Lull", artwork: [
+      { src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "icons/icon-512.png", sizes: "512x512", type: "image/png" } ] });
+  }
+  session.playbackState = playing ? "playing" : "paused";
+}
+fadeSel.addEventListener("change", () => { if (ctx) { scheduleFade(); $("clock").textContent = remaining(); } });
+dimBtn.addEventListener("click", () => {
+  $("clock").textContent = remaining(); lightsOut.classList.add("is-on"); lightsOut.focus();
+  history.pushState({ dim: true }, ""); // so Android's back gesture undims instead of leaving
+});
+function undim(fromBack) {
+  if (!lightsOut.classList.contains("is-on")) return;
+  lightsOut.classList.remove("is-on"); dimBtn.focus();
+  if (!fromBack && history.state && history.state.dim) history.back();
+}
+addEventListener("popstate", () => undim(true));
+lightsOut.addEventListener("click", () => undim());
+lightsOut.addEventListener("keydown", e => { if (["Escape", "Enter", " "].includes(e.key)) { e.preventDefault(); undim(); } });
+// the caption also names the track on the lock screen
+new MutationObserver(updateSession).observe($("caption"), { childList: true, characterData: true, subtree: true });
+setInterval(() => {
+  if (!ctx || !playing) return;
+  if (fadeEnd && ctx.currentTime >= fadeEnd) { if (viaElement) player.pause(); ctx.suspend(); setPlaying(false); $("caption").textContent = "Faded out. Sleep well."; return; }
+  $("clock").textContent = remaining();
+}, 5000);
+
+place(pos.x, pos.y);
+
+// offline and installable when served over https (or localhost)
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>

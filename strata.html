@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1C0907">
+<title>Lull — sleep soundscapes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    Lull — design tokens
+    Palette: a red-light room. No blue, no white. Bands are strata of one oxblood hue.
+  */
+  :root {
+    --night:     #1C0907;  /* the room with the lights off */
+    --stratum-0: #2A0E0A;  /* a layer that is switched off */
+    --ink:       #F3C9B0;  /* skin under a lamp */
+    --ink-dim:   #B07E68;
+    --safelight: #E0442B;  /* darkroom safelight, the one hot colour */
+    --ember:     #5A1E14;  /* readout on the dimmed screen */
+    --glow:      #82301C;  /* a layer at full volume */
+
+    --serif: "Gowun Batang", Georgia, serif;
+    --sans:  "Atkinson Hyperlegible", system-ui, sans-serif;
+
+    /* scale: 14 / 16 / 21 / 36 / 72 */
+    --t-sm: 0.875rem;
+    --t-md: 1rem;
+    --t-lg: 1.3125rem;
+    --t-xl: 2.25rem;
+    --t-xxl: 4.5rem;
+
+    --gutter: clamp(1rem, 4vw, 2.5rem);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--night);
+    color: var(--ink);
+    font: 400 var(--t-md)/1.5 var(--sans);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 2px; }
+
+  /* ---------- header ---------- */
+  .top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 1rem 2rem;
+    flex-wrap: wrap;
+    padding: var(--gutter) var(--gutter) 1.25rem;
+  }
+  .wordmark {
+    font: 400 var(--t-xl)/1 var(--serif);
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .lede {
+    margin: 0.5rem 0 0; max-width: 34em;
+    color: var(--ink-dim);
+  }
+  .status { color: var(--ink-dim); font-size: var(--t-sm); min-height: 1.5em; }
+
+  /* ---------- strata (the mixer) ---------- */
+  .strata {
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .band {
+    --grow: 1;
+    --lvl: 0;
+    position: relative;
+    flex: var(--grow) 1 0;
+    min-height: 64px;
+    /* louder layers glow warmer: the colour is the volume, not decoration */
+    background: color-mix(in oklab, var(--glow) calc(var(--lvl) * 100%), var(--stratum-0));
+    transition: flex-grow 0.6s cubic-bezier(.3,.7,.2,1), background-color 0.6s;
+    overflow: hidden;
+  }
+  .band.is-off { background: var(--stratum-0); }
+  .band canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .band-row {
+    position: relative; height: 100%;
+    display: grid; align-items: center;
+    grid-template-columns: minmax(9rem, 14rem) 1fr 3.5rem;
+    gap: 1.5rem;
+    padding: 0.5rem var(--gutter);
+  }
+  .band-name {
+    justify-self: start;
+    background: none; border: 0; padding: 0.25rem 0; cursor: pointer;
+    text-align: left;
+  }
+  .band-name strong { display: block; font: 400 var(--t-lg)/1.2 var(--serif); }
+  .band-name span { display: block; font-size: var(--t-sm); color: var(--ink-dim); }
+  .band.is-off .band-name strong { color: var(--ink-dim); }
+  .band-level {
+    text-align: right; font-size: var(--t-sm); color: var(--ink-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 44px; margin: 0; background: transparent; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: rgba(243,201,176,.3); }
+  input[type=range]::-moz-range-track { height: 2px; background: rgba(243,201,176,.3); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px; margin-top: -9px;
+    border-radius: 50%; background: var(--safelight); border: 2px solid var(--ink);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--safelight); border: 2px solid var(--ink);
+  }
+  .band.is-off input[type=range]::-webkit-slider-thumb { background: var(--stratum-0); border-color: var(--ink-dim); }
+  .band.is-off input[type=range]::-moz-range-thumb { background: var(--stratum-0); border-color: var(--ink-dim); }
+
+  /* ---------- controls ---------- */
+  .bottom {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 1.25rem 2rem;
+    padding: 1.25rem var(--gutter) calc(var(--gutter) + env(safe-area-inset-bottom));
+  }
+  .presets { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 1.25rem; }
+  .presets h2 { font: 400 var(--t-sm)/1.5 var(--sans); color: var(--ink-dim); margin: 0 0.25rem 0 0; }
+  .preset {
+    background: none; border: 0; padding: 0.5rem 0; cursor: pointer;
+    font-family: var(--serif);
+    text-decoration: underline; text-decoration-color: rgba(243,201,176,.3);
+    text-underline-offset: 0.3em;
+  }
+  .preset:hover, .preset[aria-pressed=true] { text-decoration-color: var(--safelight); }
+
+  .transport { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+  .fade { display: flex; align-items: center; gap: 0.5rem; color: var(--ink-dim); font-size: var(--t-sm); }
+  .fade select {
+    background: var(--stratum-0); border: 1px solid rgba(243,201,176,.25);
+    border-radius: 4px; padding: 0.6rem 0.75rem; font-size: var(--t-md); color: var(--ink);
+  }
+  .play {
+    min-width: 8.5rem; padding: 0.85rem 1.75rem;
+    background: var(--safelight); color: var(--night);
+    border: 0; border-radius: 999px; cursor: pointer;
+    font-weight: 700;
+  }
+  .play[aria-pressed=true] { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--safelight); }
+  .dim {
+    background: none; border: 0; padding: 0.85rem 0.25rem; cursor: pointer; color: var(--ink-dim);
+  }
+  .dim:hover { color: var(--ink); }
+  .dim:disabled { opacity: .4; cursor: default; }
+
+  /* ---------- lights out ---------- */
+  .lights-out {
+    position: fixed; inset: 0; z-index: 10;
+    background: #000; /* true black: pixels off on OLED */
+    display: grid; place-content: center; text-align: center;
+    color: var(--ember);
+    opacity: 0; pointer-events: none;
+    transition: opacity 2.5s ease;
+    cursor: pointer;
+  }
+  .lights-out.is-on { opacity: 1; pointer-events: auto; }
+  .lights-out p { margin: 0; }
+  .lights-out .clock { font: 400 var(--t-xxl)/1 var(--serif); font-variant-numeric: tabular-nums; }
+  .lights-out .hint { margin-top: 1.5rem; font-size: var(--t-sm); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (max-width: 640px) {
+    .strata { min-height: auto; } /* let the page scroll instead of squeezing layers */
+    .band { min-height: 104px; }
+    .band-row { grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-content: center; gap: 0 1rem; padding-block: 0.75rem; }
+    .band { flex-basis: auto; }
+    .band-row { height: auto; min-height: 100%; }
+    .band-row input[type=range] { grid-column: 1 / -1; grid-row: 2; }
+    .band-level { grid-column: 2; grid-row: 1; }
+    .transport { width: 100%; }
+    .play { flex: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .band, .lights-out { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1 class="wordmark">Lull</h1>
+    <p class="lede">Layer the sounds you want to fall asleep to. Every sound is generated as it plays, so nothing ever loops.</p>
+  </div>
+  <p class="status" id="status" aria-live="polite"></p>
+</header>
+
+<main class="strata" id="strata" aria-label="Sound layers"></main>
+
+<footer class="bottom">
+  <div class="presets" role="group" aria-labelledby="presets-label">
+    <h2 id="presets-label">Start from</h2>
+  </div>
+  <div class="transport">
+    <label class="fade">Fade out over
+      <select id="fade">
+        <option value="15">15 min</option>
+        <option value="30" selected>30 min</option>
+        <option value="60">1 hour</option>
+        <option value="90">90 min</option>
+        <option value="0">Never, play all night</option>
+      </select>
+    </label>
+    <button class="play" id="play" aria-pressed="false">Play</button>
+    <button class="dim" id="dim" disabled>Dim the screen</button>
+  </div>
+</footer>
+
+<div class="lights-out" id="lights-out" role="dialog" aria-modal="true" aria-label="Screen dimmed" tabindex="-1">
+  <p class="clock" id="clock"></p>
+  <p class="hint">Tap anywhere to bring back the controls</p>
+</div>
+
+<script>
+/* ============================================================
+   Sound definitions
+   ============================================================ */
+const SOUNDS = [
+  { id: "rain",  name: "Rain",        note: "Steady, with drops on the glass" },
+  { id: "wind",  name: "Wind",        note: "Slow gusts through trees" },
+  { id: "surf",  name: "Surf",        note: "Waves about every twelve seconds" },
+  { id: "fire",  name: "Fire",        note: "Low roar, occasional crackle" },
+  { id: "fan",   name: "Fan",         note: "A box fan across the room" },
+  { id: "brown", name: "Brown noise", note: "Deep and even, masks voices" },
+];
+
+const PRESETS = [
+  { name: "Storm on the roof", mix: { rain: .8, wind: .45, brown: .25 } },
+  { name: "Sea cabin",         mix: { surf: .75, wind: .2, fire: .3 } },
+  { name: "Hotel room",        mix: { fan: .7, brown: .3 } },
+  { name: "Winter hearth",     mix: { fire: .7, wind: .4 } },
+];
+
+const DEFAULT_MIX = { rain: .6, wind: .25, surf: 0, fire: 0, fan: 0, brown: .2 };
+// storage can be unavailable (private browsing, file previews); the app works without it
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const saved = store.get("lull.mix");
+const levels = Object.assign({}, DEFAULT_MIX, saved || {});
+const lastOn = {}; // remembers a level when a band is switched off
+
+/* ============================================================
+   Audio engine (built on first Play, browsers require a gesture)
+   ============================================================ */
+let ctx, master, engine = {};
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function noiseBuffer(kind, seconds = 8) {
+  const len = ctx.sampleRate * seconds;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0,last=0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    if (kind === "white") d[i] = w;
+    else if (kind === "pink") { // Paul Kellet's refined method
+      b0=.99886*b0+w*.0555179; b1=.99332*b1+w*.0750759; b2=.969*b2+w*.153852;
+      b3=.8665*b3+w*.3104856; b4=.55*b4+w*.5329522; b5=-.7616*b5-w*.016898;
+      d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*.11; b6=w*.115926;
+    } else { last = (last + .02 * w) / 1.02; d[i] = last * 3.5; } // brown
+  }
+  return buf;
+}
+
+function loop(buf) {
+  const s = ctx.createBufferSource();
+  s.buffer = buf; s.loop = true;
+  s.start(0, Math.random() * buf.duration); // random offset so layers never align
+  return s;
+}
+
+function filter(type, freq, Q = 0.7) {
+  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = Q; return f;
+}
+
+function lfo(rate, depth, target) {
+  const o = ctx.createOscillator(); const g = ctx.createGain();
+  o.frequency.value = rate; g.gain.value = depth;
+  o.connect(g).connect(target); o.start();
+}
+
+function chain(...nodes) { nodes.reduce((a, b) => a.connect(b)); return nodes[nodes.length - 1]; }
+
+// short decaying burst used for raindrops and fire crackles
+function burst(ms) {
+  const len = Math.floor(ctx.sampleRate * ms / 1000);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate); const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3);
+  return buf;
+}
+
+function scatter(out, buf, minMs, maxMs, make) {
+  (function tick() {
+    if (ctx.state === "running" && levels[out._id] > 0) make();
+    setTimeout(tick, minMs + Math.random() * (maxMs - minMs));
+  })();
+}
+
+const BUILD = {
+  rain(out, N) {
+    chain(loop(N.pink), filter("highpass", 600), filter("lowpass", 7000), gain(.9), out);
+    const drop = burst(18);
+    scatter(out, drop, 12, 70, () => {
+      const s = ctx.createBufferSource(); s.buffer = drop;
+      const p = ctx.createStereoPanner(); p.pan.value = Math.random()*1.6 - .8;
+      chain(s, filter("bandpass", 1800 + Math.random()*4200, 2.5), gain(.05 + Math.random()*.2), p, out);
+      s.start();
+    });
+  },
+  wind(out, N) {
+    const bp = filter("bandpass", 500, 0.9);
+    const g = gain(.9);
+    chain(loop(N.white), bp, g, out);
+    lfo(.05, 260, bp.frequency);
+    lfo(.071, 180, bp.frequency);
+    g.gain.value = .9; lfo(.09, .45, g.gain);
+  },
+  surf(out, N) {
+    const lp = filter("lowpass", 700);
+    const g = gain(.6);
+    chain(loop(N.brown), lp, g, out);
+    lfo(1/12, .55, g.gain);        // the swell
+    lfo(1/12, 500, lp.frequency);  // brighter at the crest
+    lfo(1/31, .15, g.gain);        // some waves bigger than others
+  },
+  fire(out, N) {
+    const g = gain(.7);
+    chain(loop(N.brown), filter("lowpass", 320), g, out);
+    lfo(.3, .15, g.gain);
+    const crack = burst(4);
+    scatter(out, crack, 40, 520, () => {
+      const n = 1 + Math.floor(Math.random()*3);
+      for (let i = 0; i < n; i++) {
+        const s = ctx.createBufferSource(); s.buffer = crack;
+        const p = ctx.createStereoPanner(); p.pan.value = Math.random()*.8 - .4;
+        chain(s, filter("highpass", 1200 + Math.random()*2000), gain(.15 + Math.random()*.5), p, out);
+        s.start(ctx.currentTime + i * (.01 + Math.random()*.03));
+      }
+    });
+  },
+  fan(out, N) {
+    const g = gain(.8);
+    chain(loop(N.pink), filter("lowpass", 1100), filter("highpass", 90), g, out);
+    lfo(14, .04, g.gain); // faint blade flutter
+    const hum = ctx.createOscillator(); hum.frequency.value = 60;
+    chain(hum, gain(.05), out); hum.start();
+  },
+  brown(out, N) {
+    chain(loop(N.brown), filter("lowpass", 520), gain(1), out);
+  },
+};
+
+function gain(v) { const g = ctx.createGain(); g.gain.value = v; return g; }
+
+function curve(level) { return level * level; } // slider feels even to the ear
+
+function buildEngine() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.ratio.value = 3;
+  master = gain(1);
+  chain(master, comp, ctx.destination);
+  const N = { white: noiseBuffer("white"), pink: noiseBuffer("pink"), brown: noiseBuffer("brown") };
+  for (const s of SOUNDS) {
+    const level = gain(curve(levels[s.id]));
+    const out = gain(1); out._id = s.id;
+    const an = ctx.createAnalyser(); an.fftSize = 512;
+    chain(out, level, an, master);
+    BUILD[s.id](out, N);
+    engine[s.id] = { level, an, buf: new Float32Array(an.fftSize) };
+  }
+}
+
+/* ============================================================
+   Fade-out timer
+   ============================================================ */
+let fadeEnd = 0; // in ctx time; 0 = no fade
+
+function scheduleFade() {
+  if (!ctx) return;
+  const mins = +fadeSel.value;
+  const now = ctx.currentTime;
+  master.gain.cancelScheduledValues(now);
+  master.gain.setValueAtTime(1, now);
+  if (mins > 0) {
+    fadeEnd = now + mins * 60;
+    master.gain.exponentialRampToValueAtTime(0.001, fadeEnd);
+  } else fadeEnd = 0;
+}
+
+function remainingText() {
+  if (!fadeEnd) return "Playing until you stop it";
+  const s = Math.max(0, fadeEnd - ctx.currentTime);
+  const m = Math.ceil(s / 60);
+  return m <= 1 ? "Fading out now" : `Fades out in ${m} min`;
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+const strata = document.getElementById("strata");
+const playBtn = document.getElementById("play");
+const dimBtn = document.getElementById("dim");
+const fadeSel = document.getElementById("fade");
+const statusEl = document.getElementById("status");
+const lightsOut = document.getElementById("lights-out");
+const clock = document.getElementById("clock");
+const presetsEl = document.querySelector(".presets");
+const bands = {};
+
+for (const s of SOUNDS) {
+  const el = document.createElement("section");
+  el.className = "band";
+  el.innerHTML = `
+    <canvas aria-hidden="true"></canvas>
+    <div class="band-row">
+      <button class="band-name" aria-pressed="true" aria-label="${s.name}, ${s.note}. Turn on or off">
+        <strong>${s.name}</strong><span>${s.note}</span>
+      </button>
+      <input type="range" min="0" max="100" step="1" aria-label="${s.name} volume">
+      <span class="band-level" aria-hidden="true"></span>
+    </div>`;
+  strata.append(el);
+  const range = el.querySelector("input");
+  const toggle = el.querySelector(".band-name");
+  range.addEventListener("input", () => { setLevel(s.id, range.value / 100); clearPreset(); });
+  toggle.addEventListener("click", () => {
+    if (levels[s.id] > 0) { lastOn[s.id] = levels[s.id]; setLevel(s.id, 0); }
+    else setLevel(s.id, lastOn[s.id] || .5);
+    clearPreset();
+  });
+  bands[s.id] = { el, range, toggle, canvas: el.querySelector("canvas"), levelEl: el.querySelector(".band-level"),
+                  hist: new Array(160).fill(0), peak: 1e-4 };
+}
+
+function setLevel(id, v) {
+  levels[id] = v;
+  const b = bands[id];
+  b.range.value = Math.round(v * 100);
+  b.levelEl.textContent = v > 0 ? Math.round(v * 100) : "Off";
+  b.el.classList.toggle("is-off", v === 0);
+  b.toggle.setAttribute("aria-pressed", String(v > 0));
+  // band thickness is the volume: off layers shrink to a thin seam
+  b.el.style.setProperty("--grow", v === 0 ? 0.35 : 0.6 + v * 3);
+  b.el.style.setProperty("--lvl", 0.15 + v * 0.85);
+  if (engine[id]) engine[id].level.gain.setTargetAtTime(curve(v), ctx.currentTime, .15);
+  store.set("lull.mix", levels);
+}
+
+for (const p of PRESETS) {
+  const b = document.createElement("button");
+  b.className = "preset"; b.textContent = p.name; b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => {
+    for (const s of SOUNDS) setLevel(s.id, p.mix[s.id] || 0);
+    clearPreset(); b.setAttribute("aria-pressed", "true");
+  });
+  presetsEl.append(b);
+}
+function clearPreset() { presetsEl.querySelectorAll(".preset").forEach(b => b.setAttribute("aria-pressed", "false")); }
+
+for (const s of SOUNDS) setLevel(s.id, levels[s.id]);
+
+let playing = false;
+playBtn.addEventListener("click", async () => {
+  if (!ctx) { buildEngine(); scheduleFade(); }
+  if (playing) { await ctx.suspend(); playing = false; }
+  else {
+    if (fadeEnd && ctx.currentTime >= fadeEnd) scheduleFade(); // finished last time: start fresh
+    await ctx.resume(); playing = true;
+  }
+  playBtn.textContent = playing ? "Pause" : "Play";
+  playBtn.setAttribute("aria-pressed", String(playing));
+  dimBtn.disabled = !playing;
+  updateStatus();
+});
+
+fadeSel.addEventListener("change", () => { scheduleFade(); updateStatus(); });
+
+function updateStatus() {
+  if (!ctx) { statusEl.textContent = ""; return; }
+  statusEl.textContent = playing ? remainingText() : "Paused";
+  clock.textContent = fadeEnd ? remainingText().replace("Fades out in ", "") : "";
+}
+
+function dimOn() { lightsOut.classList.add("is-on"); lightsOut.focus(); updateStatus(); }
+function dimOff() { lightsOut.classList.remove("is-on"); dimBtn.focus(); }
+dimBtn.addEventListener("click", dimOn);
+lightsOut.addEventListener("click", dimOff);
+lightsOut.addEventListener("keydown", e => { if (e.key === "Escape" || e.key === "Enter" || e.key === " ") { e.preventDefault(); dimOff(); } });
+
+// check every few seconds whether the fade has finished
+setInterval(() => {
+  if (!ctx || !playing) return;
+  if (fadeEnd && ctx.currentTime >= fadeEnd) {
+    ctx.suspend(); playing = false;
+    playBtn.textContent = "Play"; playBtn.setAttribute("aria-pressed", "false");
+    dimBtn.disabled = true;
+    statusEl.textContent = "Faded out. Sleep well.";
+    clock.textContent = "";
+    return;
+  }
+  updateStatus();
+}, 5000);
+
+/* ============================================================
+   Visual: each stratum draws a slow trace of its own loudness,
+   newest on the right, like a chart recorder running overnight.
+   ============================================================ */
+let frame = 0;
+function draw() {
+  frame++;
+  for (const s of SOUNDS) {
+    const b = bands[s.id], e = engine[s.id];
+    const c = b.canvas, dpr = devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+    if (e && playing && frame % 4 === 0) {
+      e.an.getFloatTimeDomainData(e.buf);
+      let sum = 0; for (const x of e.buf) sum += x * x;
+      const rms = Math.sqrt(sum / e.buf.length);
+      b.peak = Math.max(rms, b.peak * 0.995);
+      // smooth so the trace breathes rather than jitters
+      b.smooth = (b.smooth || 0) * 0.7 + (levels[s.id] > 0 ? rms / b.peak : 0) * 0.3;
+      b.hist.push(b.smooth); b.hist.shift();
+    }
+    const g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    if (levels[s.id] === 0) continue;
+    const n = b.hist.length, amp = h * 0.3;
+    g.beginPath(); g.moveTo(0, h);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * w;
+      const y = h - 4 - (playing || e ? b.hist[i] : 0.15) * amp;
+      i ? g.lineTo(x, y) : g.lineTo(0, y);
+    }
+    g.lineTo(w, h); g.closePath();
+    g.fillStyle = "rgba(243,201,176,0.07)"; g.fill();
+  }
+  if (!reduceMotion || frame < 2) requestAnimationFrame(draw);
+  else setTimeout(() => requestAnimationFrame(draw), 1000);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
